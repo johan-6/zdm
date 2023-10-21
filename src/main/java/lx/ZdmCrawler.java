@@ -43,18 +43,18 @@ public class ZdmCrawler {
     public static void main(String[] args) {
         Set<Zdm> zdms = ZDM_URL.stream().flatMap(url -> {
                     List<Zdm> zdmPage = new ArrayList<>();
-                    for (int i = 1; i <= 20; i++) {//爬取前20页数据
+                    for (int i = 1; i <= 20; i++) {// 爬取前20页数据
                         try {
                             String s = HttpUtil.get(url + i, 10000);
                             List<Zdm> zdmPart = JSONObject.parseArray(s, Zdm.class);
                             zdmPart.forEach(zdm -> {
-                                //将评论和点值数量的值后面会跟着'k','w'这种字符,将它们转换一下方便后面过滤和排序
+                                // 将评论和点值数量的值后面会跟着'k','w'这种字符,将它们转换一下方便后面过滤和排序
                                 zdm.setComments(Utils.strNumberFormat(zdm.getComments()));
                                 zdm.setVoted(Utils.strNumberFormat(zdm.getVoted()));
                             });
                             zdmPage.addAll(zdmPart);
                         } catch (IORuntimeException | HttpException e) {
-                            //暂时的网络不通,会导致连接超时的异常,等待下次运行即可
+                            // 暂时的网络不通,会导致连接超时的异常,等待下次运行即可
                             System.out.println("pageNumber:" + i + ", connect to zdm server timeout:" + e.getMessage());
                         }
                     }
@@ -63,21 +63,25 @@ public class ZdmCrawler {
                 .sorted(Comparator.comparing(Zdm::getComments).reversed())    // 评论数量倒序,用LinkedHashSet保证有序
                 .collect(Collectors.toCollection(LinkedHashSet::new));// ZDM_URL这里是按多个时间段纬度的排行榜进行爬取的,会存在相同优惠信息被重复爬取的情况,Zdm类重写了equals(),利用Set去重
 
-        //unpushed.txt记录了上次执行后,未推送的优惠信息
+        // unpushed.txt记录了上次执行后,未推送的优惠信息
         HashSet<String> unPushed = Utils.readFile("./unpushed.txt");
         zdms.addAll(StreamUtils.map(unPushed, o -> JSONObject.parseObject(o, Zdm.class)));
 
-        //黑词过滤
+        // 黑词过滤
         HashSet<String> blackWords = Utils.readFile("./black_words.txt");
         blackWords.removeIf(StringUtils::isBlank);
 
-        //已推送的优惠信息id
+        // white list
+        HashSet<String> whiteWords = Utils.readFile("./white_words.txt");
+        whiteWords.removeIf(StringUtils::isBlank);
+
+        // 已推送的优惠信息id
         Set<String> pushedIds;
         try {
             new File("./logs/").mkdirs();
             pushedIds = Files.walk(Paths.get("./logs/"), 2)
                     .filter(p -> !Files.isDirectory(p))
-                    .filter(p -> LocalDate.parse(p.getParent().getFileName().toString()).isAfter(LocalDate.now().minusMonths(1))) //统计一个月内的数据,这也意味着相同的优惠信息,如果一个月后再次登上排行榜,则会被重复推送.不过这种场景比较少,在排行榜上的一般是比较新的内容
+                    .filter(p -> LocalDate.parse(p.getParent().getFileName().toString()).isAfter(LocalDate.now().minusMonths(1))) // 统计一个月内的数据,这也意味着相同的优惠信息,如果一个月后再次登上排行榜,则会被重复推送.不过这种场景比较少,在排行榜上的一般是比较新的内容
                     .map(Path::toFile)
                     .flatMap(f -> Utils.readFile(f.getPath()).stream()).collect(Collectors.toSet());
         } catch (IOException e) {
@@ -86,11 +90,12 @@ public class ZdmCrawler {
         }
 
         zdms = new HashSet<>(StreamUtils.filter(zdms, z ->
-                StringUtils.isBlank(StreamUtils.findFirst(blackWords, w -> z.getTitle().contains(w))) //黑词过滤
-                        && Integer.parseInt(z.getVoted()) > Integer.parseInt(System.getenv("minVoted")) //值的数量
-                        && Integer.parseInt(z.getComments()) > Integer.parseInt(System.getenv("minComments")) //评论的数量
-                        && !z.getPrice().contains("前") //不是前xxx名的耍猴抢购
-                        && !pushedIds.contains(z.getArticleId()) //不是已经推送过的
+                StringUtils.isNotBlank(StreamUtils.findFirst(whiteWords, w -> z.getTitle().contains(w))) // filter to get items in white list
+                        && StringUtils.isBlank(StreamUtils.findFirst(blackWords, w -> z.getTitle().contains(w))) // 黑词过滤
+                        && Integer.parseInt(z.getVoted()) > Integer.parseInt(System.getenv("minVoted")) // 值的数量
+                        && Integer.parseInt(z.getComments()) > Integer.parseInt(System.getenv("minComments")) // 评论的数量
+                        && !z.getPrice().contains("前") // 不是前xxx名的耍猴抢购
+                        && !pushedIds.contains(z.getArticleId()) // 不是已经推送过的
         ));
         zdms.forEach(z -> System.out.println(z.getArticleId() + " | " + z.getTitle()));
 
