@@ -59,8 +59,9 @@ public class ZdmCrawler {
                         }
                     }
                     return zdmPage.stream();
-                }).sorted(Comparator.comparing(Zdm::getComments).reversed())    //评论数量倒序,用LinkedHashSet保证有序
-                .collect(Collectors.toCollection(LinkedHashSet::new));//ZDM_URL这里是按多个时间段纬度的排行榜进行爬取的,会存在相同优惠信息被重复爬取的情况,Zdm类重写了equals(),利用Set去重
+                }).sorted(Comparator.comparing(Zdm::getVoted).reversed()) // sorted by voted desc
+                .sorted(Comparator.comparing(Zdm::getComments).reversed())    // 评论数量倒序,用LinkedHashSet保证有序
+                .collect(Collectors.toCollection(LinkedHashSet::new));// ZDM_URL这里是按多个时间段纬度的排行榜进行爬取的,会存在相同优惠信息被重复爬取的情况,Zdm类重写了equals(),利用Set去重
 
         //unpushed.txt记录了上次执行后,未推送的优惠信息
         HashSet<String> unPushed = Utils.readFile("./unpushed.txt");
